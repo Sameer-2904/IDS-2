@@ -1,0 +1,91 @@
+# Network IDS — sample configuration file
+# All keys and their defaults are documented below.
+# Copy this file, adjust the values for your environment, and pass it with:
+#   python main.py --config config.yaml
+
+# ---------------------------------------------------------------------------
+# Packet capture
+# ---------------------------------------------------------------------------
+
+# Network interface to capture on (required).
+# Examples: eth0, en0, Wi-Fi, lo
+interface: \Device\NPF_{2D1B92A3-3BAD-453F-99E1-E9E63649065C}
+
+# Optional BPF filter string to restrict captured traffic.
+# Leave empty ("") or omit to capture all traffic.
+# Examples: "tcp", "tcp port 80", "host 192.168.1.0/24"
+bpf_filter: ""
+
+# ---------------------------------------------------------------------------
+# Port scan detection
+# ---------------------------------------------------------------------------
+
+# Number of distinct destination ports a single source IP must contact within
+# the window before a PORT_SCAN alert is raised.
+# Alert fires when distinct_ports > port_scan_threshold.
+port_scan_threshold: 20
+
+# Duration of the port-scan observation window in seconds.
+port_scan_window_seconds: 10
+
+# ---------------------------------------------------------------------------
+# Brute-force login attempt detection
+# ---------------------------------------------------------------------------
+
+# Number of TCP SYN packets to a monitored port from a single source IP
+# within the window before a BRUTE_FORCE alert is raised.
+# Alert fires when syn_count > brute_force_threshold.
+brute_force_threshold: 10
+
+# Duration of the brute-force observation window in seconds.
+brute_force_window_seconds: 10
+
+# List of destination ports to monitor for brute-force activity.
+# Default covers SSH (22), FTP (21), RDP (3389), and VNC (5900).
+brute_force_ports: [22, 21, 3389, 5900]
+
+# ---------------------------------------------------------------------------
+# DoS attack detection
+# ---------------------------------------------------------------------------
+
+# Packet rate (packets per second) from a single source IP that must be
+# exceeded before a DOS alert is raised.
+dos_threshold_pps: 100
+
+# Duration of the DoS observation window in seconds.
+dos_window_seconds: 10
+
+# Number of consecutive 1-second intervals that must exceed dos_threshold_pps
+# before a DOS alert is raised (prevents false positives from short bursts).
+dos_consecutive_intervals: 3
+
+# ---------------------------------------------------------------------------
+# Web dashboard
+# ---------------------------------------------------------------------------
+
+# TCP port the Flask dashboard listens on.
+# Access the dashboard at http://localhost:<dashboard_port>
+dashboard_port: 5000
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+
+# Path to the SQLite database file for persistent alert storage.
+# Use ":memory:" for an in-memory database (data lost on restart).
+log_store_path: ids.db
+
+# Path to the structured JSON log file.
+log_file_path: ids.log
+
+# Application log level. One of: DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_level: INFO
+
+# ---------------------------------------------------------------------------
+# Optional IP blocking
+# ---------------------------------------------------------------------------
+
+# Set to true to enable the IP blocking feature.
+# Requires root (Linux) or Administrator (Windows) privileges.
+# When enabled, "Block IP" buttons appear in the dashboard.
+ip_blocker_enabled: false
