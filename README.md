@@ -1,162 +1,171 @@
-# Network Intrusion Detection System (IDS)
+# NetGuard — Network Intrusion Detection System
 
-A Python-based Network IDS that monitors live network traffic in real time, detects suspicious activity (port scanning, brute-force login attempts, DoS behaviour), persists structured alerts, and surfaces findings through a Flask web dashboard.
-
----
-
-## Prerequisites
-
-- Python 3.11 or later
-- **Root / Administrator privileges** — required to open a raw network socket for packet capture (and for the optional IP-blocking feature)
-- On Linux: `iptables` must be installed if IP blocking is enabled
-- On Windows: `netsh` is built-in; run the terminal as Administrator
+A real-time network IDS with a cyberpunk-styled web dashboard.
+Detects **Port Scanning**, **Brute-Force Login Attempts**, and **DoS Attacks**,
+logs every alert, and lets you block suspicious IPs from the UI.
 
 ---
 
-## Installation
+## Project Structure
 
-1. Clone or download the repository.
-
-2. (Recommended) Create and activate a virtual environment:
-
-   ```bash
-   python -m venv .venv
-   # Linux / macOS
-   source .venv/bin/activate
-   # Windows
-   .venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
----
-
-## Configuration
-
-All settings are read from a YAML file (default: `config.yaml` in the working directory). Pass a custom path with `--config`:
-
-```bash
-python main.py --config /path/to/my-config.yaml
+```
+network-ids/
+├── app.py                  ← Flask + SocketIO entry point
+├── requirements.txt
+├── README.md
+├── backend/
+│   ├── __init__.py
+│   ├── detector.py         ← Threat detection engine
+│   └── sniffer.py          ← Scapy packet capture (+ demo mode)
+├── templates/
+│   └── dashboard.html      ← Full dashboard UI
+├── static/                 ← (css / js assets if added later)
+└── logs/
+    ├── ids.log             ← Text log (auto-created)
+    └── alerts.json         ← JSON alert log (auto-created)
 ```
 
-### Configuration reference
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `interface` | string | *(required)* | Network interface to capture on (e.g. `eth0`, `en0`, `Wi-Fi`) |
-| `bpf_filter` | string | `""` | Optional BPF filter string (e.g. `"tcp port 80"`). Empty = capture all |
-| `port_scan_threshold` | int > 0 | `20` | Distinct destination ports per window before a PORT_SCAN alert fires |
-| `port_scan_window_seconds` | int > 0 | `10` | Port-scan observation window duration (seconds) |
-| `brute_force_threshold` | int > 0 | `10` | TCP SYN packets per monitored port per window before a BRUTE_FORCE alert fires |
-| `brute_force_window_seconds` | int > 0 | `10` | Brute-force observation window duration (seconds) |
-| `brute_force_ports` | list[int] | `[22, 21, 3389, 5900]` | Destination ports monitored for brute-force activity |
-| `dos_threshold_pps` | int > 0 | `100` | Packets per second per source IP before a DOS alert fires |
-| `dos_window_seconds` | int > 0 | `10` | DoS observation window duration (seconds) |
-| `dos_consecutive_intervals` | int > 0 | `3` | Consecutive 1-second intervals above threshold required before a DOS alert fires |
-| `dashboard_port` | int > 0 | `5000` | TCP port the Flask dashboard listens on |
-| `log_store_path` | string | `ids.db` | Path to the SQLite database file |
-| `log_file_path` | string | `ids.log` | Path to the structured JSON log file |
-| `log_level` | string | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
-| `ip_blocker_enabled` | bool | `false` | Enable the IP-blocking feature (requires root/admin) |
-
-A fully-commented sample configuration is provided in `config.yaml`.
-
 ---
 
-## Running the IDS
+## Quick Start
 
+### 1 — Clone / download the project
 ```bash
-# Linux / macOS (root required for raw socket)
-sudo python main.py --config config.yaml
-
-# Windows (run terminal as Administrator)
-python main.py --config config.yaml
+cd network-ids
 ```
 
-The IDS will:
-1. Load and validate the configuration.
-2. Open the network interface for packet capture.
-3. Start the detection engine and alert manager.
-4. Start the Flask dashboard.
-5. Log all events to `ids.log` (JSON) and stdout.
+### 2 — Create a virtual environment
+```bash
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+```
 
-Stop the IDS gracefully with **Ctrl+C** (SIGINT) or by sending SIGTERM. The IDS will flush all pending writes and exit with code 0.
+### 3 — Install dependencies
+```bash
+pip install -r requirements.txt
+```
 
----
+### 4 — Run the server
 
-## Accessing the Dashboard
+**Just want to see it working (no root needed):**
+```bash
+python app.py --demo
+```
 
-Once the IDS is running, open a browser and navigate to:
+**Live packet capture — Linux / macOS (needs root):**
+```bash
+sudo venv/bin/python app.py          # use the venv's python, plain `sudo python` skips the venv
+```
 
+**Live packet capture — Windows (Administrator terminal, [Npcap](https://npcap.com) installed):**
+```powershell
+python app.py
+```
+
+Options: `--demo` (simulated traffic) · `--iface eth0` (one interface) ·
+`--port 8080` · `--host 0.0.0.0` (expose on LAN — the dashboard has no login).
+
+> **No root / no Npcap / wrong interface?**
+> The sniffer automatically falls back to **Demo Mode**, which simulates
+> realistic traffic including port scans, brute-force, and DoS bursts —
+> and prints why it switched.
+
+### 5 — Open the dashboard
 ```
 http://localhost:5000
 ```
 
-(Replace `5000` with your configured `dashboard_port`.)
+---
 
-The dashboard provides:
-- **Traffic Stats** — total packets captured and a live packet-rate chart (updated every 2 seconds)
-- **Alerts** — the 50 most recent alerts with severity colour coding
-- **Suspicious IPs** — all flagged source IPs sorted by alert count
-- **Logs** — searchable, paginated alert history with client-side filtering
+## Detection Rules
 
-If `ip_blocker_enabled: true` is set in the config, each suspicious IP row shows **Block** / **Unblock** buttons.
+| Threat | Trigger |
+|---|---|
+| **Port Scan** | ≥ 15 distinct destination ports probed by one IP within 10 s (TCP packets *without* the ACK bit: SYN, FIN, NULL, Xmas) |
+| **Brute Force** | ≥ 10 SYN packets to a login port (22, 3389, 3306 …) within 10 s |
+| **DoS Attack** | ≥ 500 packets/second from a single source IP |
+
+> Replies and established-session traffic (ACK set) are deliberately ignored, so a
+> busy server answering many clients is not flagged as a scanner. A legitimate
+> high-bandwidth download can still exceed 500 pkt/s — raise `DOS_THRESHOLD` if needed.
+
+Thresholds are constants at the top of `backend/detector.py` — tune freely.
 
 ---
 
-## Running Tests
+## Dashboard Features
 
+| Feature | Details |
+|---|---|
+| Live traffic stats | Total / TCP / UDP / ICMP packet counters via WebSocket |
+| Protocol breakdown chart | Doughnut chart (Chart.js) |
+| Alert timeline | Per-minute bar chart of alert frequency |
+| Live alert stream | Colour-coded severity (CRITICAL / HIGH / MEDIUM) |
+| Suspicious IP table | Attack type, hit count, last-seen time |
+| Block / Unblock IP | Sidebar form **or** per-row button in the table |
+| Attack log | Last 100 alerts from `logs/alerts.json`, newest first |
+
+---
+
+## REST API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/snapshot` | Full state dump (stats, alerts, suspicious, blocked) |
+| GET | `/api/alerts` | Recent alerts (ring-buffer, max 200) |
+| GET | `/api/suspicious` | Suspicious IP registry |
+| GET | `/api/blocked` | Currently blocked IPs |
+| GET | `/api/logs` | Last 100 entries from the JSON log file |
+| POST | `/api/block` | `{"ip": "1.2.3.4"}` — block an IP |
+| POST | `/api/unblock` | `{"ip": "1.2.3.4"}` — unblock an IP |
+
+### WebSocket Events (Socket.IO)
+
+| Event | Direction | Payload |
+|---|---|---|
+| `init` | server → client | Full snapshot on connect |
+| `stats_update` | server → client | Packet counters (every second) |
+| `new_alert` | server → client | Single alert dict |
+| `ip_blocked` | server → client | `{"ip": "..."}` |
+| `ip_unblocked` | server → client | `{"ip": "..."}` |
+
+---
+
+## Customising
+
+**Add more login ports** — edit `LOGIN_PORTS` in `backend/detector.py`.
+
+**Change thresholds** — edit the constants at the top of `backend/detector.py`:
+```python
+PORT_SCAN_THRESHOLD   = 15   # distinct ports
+BRUTE_FORCE_THRESHOLD = 10   # SYN attempts
+DOS_THRESHOLD         = 500  # packets/second
+TIME_WINDOW           = 10   # seconds
+```
+
+**Sniff a specific interface:**
 ```bash
-# Run the full test suite
-python -m pytest tests/ -v
-
-# Run a single test file
-python -m pytest tests/test_detection.py -v
-
-# Run with coverage (requires pytest-cov)
-python -m pytest tests/ --cov=ids --cov-report=term-missing
+python app.py --iface eth0        # or: IDS_IFACE=eth0 python app.py
 ```
 
-All tests mock Scapy and subprocess calls — no network interface or firewall privileges are required to run the test suite.
+**Note on blocking:** "Block" tells the IDS to ignore/stop alerting on that IP.
+It does **not** add firewall rules to your OS.
 
 ---
 
-## Folder Structure
+## Troubleshooting
 
-```
-.
-├── main.py                     # Entry point — wires all components together
-├── config.yaml                 # Sample configuration file
-├── requirements.txt            # Pinned Python dependencies
-├── ids/                        # Main package
-│   ├── __init__.py
-│   ├── capture.py              # PacketCaptureEngine — Scapy-based packet capture
-│   ├── detection.py            # DetectionEngine, PortScanDetector,
-│   │                           #   BruteForceDetector, DoSDetector
-│   ├── alert_manager.py        # AlertManager — UUID assignment, persistence, ring buffer
-│   ├── log_store.py            # LogStore — SQLite persistence layer
-│   ├── models.py               # Shared data models (Alert, SuspiciousIP, enums)
-│   ├── config.py               # DetectionConfig (pydantic v2) and load_config()
-│   ├── logger.py               # JSON structured logging setup
-│   ├── ip_blocker.py           # IPBlocker — iptables / netsh firewall rules
-│   └── dashboard/              # Flask web dashboard
-│       ├── __init__.py         # create_app() factory
-│       ├── routes.py           # REST API route handlers
-│       └── templates/
-│           └── index.html      # Bootstrap 5 + Chart.js single-page UI
-└── tests/                      # pytest test suite
-    ├── test_config.py
-    ├── test_logger.py
-    ├── test_models.py
-    ├── test_log_store.py
-    ├── test_alert_manager.py
-    ├── test_detection.py
-    ├── test_detection_engine.py
-    ├── test_capture.py
-    ├── test_dashboard.py
-    └── test_ip_blocker.py
-```
+| Symptom | Cause / fix |
+|---|---|
+| Dashboard loads but stays at 0 packets | Live capture is running but the network is quiet, or you're not root. Try `python app.py --demo`. |
+| `[IDS] Live capture failed … switching to DEMO mode` | Read the reason in the message: missing Npcap (Windows), wrong `--iface`, or no permission. |
+| `sudo python app.py` → `ModuleNotFoundError` | `sudo` ignores your venv. Use `sudo venv/bin/python app.py`. |
+| Alerts appear only once per attacker | By design: one alert per IP per attack type, reset every 60 s. |
+
+---
+
+## Requirements
+
+- Python 3.9+ (tested on 3.12)
+- Linux / macOS / Windows
+- Root / Administrator privileges for live capture (optional — demo mode otherwise)
